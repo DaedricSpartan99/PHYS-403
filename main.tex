@@ -1,0 +1,445 @@
+\documentclass[12pt,english]{smfart}
+
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+
+\usepackage{amssymb,url,xspace,smfthm}
+\usepackage{graphicx, caption, subcaption}
+\usepackage{amsmath}
+\usepackage[utf8]{inputenc}
+\usepackage[colorlinks,bookmarks=false,linkcolor=black,urlcolor=blue, citecolor=black]{hyperref}
+\usepackage{units}
+\usepackage{array}
+\usepackage{sidecap}
+
+\usepackage{float}
+
+\usepackage{makecell}
+\usepackage{multirow}
+
+\usepackage{mathtools}
+\usepackage{gensymb}
+\usepackage{wrapfig}
+
+\usepackage{chemist, xymtex}
+
+% boundaries, use default when deactivated
+\usepackage[top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+
+%package setup for graphs
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\usetikzlibrary{patterns}
+
+\usepgfplotslibrary{external}
+\pgfplotsset{compat=newest}
+
+\IfFileExists{./tikzext.perm}{\tikzexternalize[prefix=tikzext/]}{\tikzexternalize}
+
+% units of mesure
+\usepackage{siunitx}
+
+% comments
+\usepackage{comment}
+
+% compute to result
+\usepackage{xfp}
+
+% definition of absolute value
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
+
+% copyright command
+\def\meta#1{$\langle${\it #1}$\rangle$}
+\newcommand{\myast}{($\star$)\ }
+\makeatletter
+    \def\ps@copyright{\ps@empty
+    \def\@oddfoot{\hfil\small\copyright 2019, \EPFL}}
+\makeatother
+
+%pgfplot setup
+\makeatletter
+\pgfplotsset{
+    /pgfplots/flexible xticklabels from table/.code n args={3}{%
+        \pgfplotstableread[#3]{#1}\coordinate@table
+        \pgfplotstablegetcolumn{#2}\of{\coordinate@table}\to\pgfplots@xticklabels
+        \let\pgfplots@xticklabel=\pgfplots@user@ticklabel@list@x
+    },
+    % layer definition
+    layers/my layer set/.define layer set={
+        background,
+        main,
+        foreground
+    }{
+        % you could state styles here which should be moved to
+        % corresponding layers, but that is not necessary here.
+        % That is why we don't state anything here
+    },
+    % activate the newly created layer set
+    set layers=my layer set
+}
+\makeatother
+
+% something else
+\newcommand{\EPFL}{\'Ecole Polytechnique F\'ed\'erale de Lausanne}
+
+\def \be {\begin{equation}}
+\def \ee {\end{equation}}
+
+\def \bf {\begin{figure}}
+\def \ef {\end{figure}}
+
+\tolerance 400
+\pretolerance 200
+
+% define equations and values
+\newcommand{\I}{3.4601865870615996e-07}
+\newcommand{\wzero}{152.053084433746}
+\newcommand{\kboltz}{1.380649e-23}
+
+% #1 = alpha, #2 = shift, #3 = gain
+\newcommand{\chimod}[3]{#3 / sqrt( ((2*pi*(x - #2))^2 - \wzero^2)^2 * \I^2 + (#1 * 2 * pi * (x - #2))^2 )}
+
+% #1 = T, #2 = alpha, #3 = shift
+\newcommand{\psd}[3]{4 * #1 * #2 * \kboltz / ( ((2*pi*(x - #3))^2 - \wzero^2)^2 * \I^2 + (#2 * 2 * pi * (x - #3))^2 ) }
+
+\newcommand{\chimodvalue}[4]{#4 / sqrt( ((2*pi*(#1 - #3))^2 - \wzero^2)^2 * \I^2 + (#2 * 2 * pi * (#1 - #3))^2 )}
+
+% #1 = deep/change, #2 = subname (5mm, plomb, ecc..), #3 = step number
+\newcommand{\stepfile}[3]{"output/#1/#2_timosophraffa/#2_timosophraffa_step#3.out"}
+
+
+\title{Task 2: molecular dynamics in a three-dimensional cubic lattice}
+\date {\today}
+\author{Raffaele Ancarola}
+\dedicatory{Alfredo Pasquarello}
+
+\begin{document}
+\def\smfbyname{}
+
+\maketitle
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+\label{intro}
+\noindent 
+Numerical simulations are powerful tools allowing to obtain predictions in physical systems. 
+In the particular case of molecular dynamics of liquid Argon, they give access to the estimates of thermodynamical quantities 
+that otherwise wouldn't be possible to compute analytically. 
+Specifically, the liquid Argon is modelled by $N$ classical particles interacting each other through the Lennard-Jones potential \cite{Rahman}. The simulation concern the evolution in time of those particles in a classical perspective using Runge-Kutta integrators (specifically \textit{second order Euler} and \textit{Verlet} \cite{course031}) and find the equilibrium states of the system.
+At first, in this report the velocity of the particles will be manipulated in order to fix the temperature $T$ and reach the closest equilibrium energy state (see section \ref{sec:energy}). 
+Secondly, the pair correlation function $g(r)$ and the structure factor $S(k)$ (see section \ref{sec:structural}) will be estimated, deducing the average bond properties of the Argon particles.
+At last, the diffusion coefficient will be estimated using two different methods (see section \ref{sec:diffusion}).
+A study of Rahman \cite{Rahman} has already been performed on this purpose and all numerical results of this study will be compared with that article.
+
+\subsection{System description}
+\noindent Our system is composed by a cubic periodic lattice initially containing 4 atoms per cell, where each cell is distanced of a factor $a = 1.7048$. Atoms interact with each other by the Lennard-Jones potential:
+
+\begin{equation} \label{lennardjones}
+V(r) = 4 \varepsilon \left[\left(\frac{\sigma}{r}\right)^{12} - \left(\frac{\sigma}{r}\right)^{6}\right] 
+\end{equation}
+
+where $r$ is the distance between each atom.
+For instance, $\sigma = 3.4$ \si{\angstrom} and $\varepsilon/k_B = 120$ \si{K} for Argon.  For the sake of simplification during the simulation, $r$ and $V(r)$ are normalized in \si{LJ} units \cite{ljunits}.
+
+\noindent
+For simplicity, only $N_{cells}^{(x)} := 6$ cells per dimension are considered, thus having three dimensions, the total number of lattice cells is $N_{cells}^3 = 216$.
+Here periodic boundary conditions for positions are set with the purpose to approximately describe an infinitely long lattice over all dimensions. Finally, atoms are considered as classical particles and having 4 atoms per cell implies that the total number of particles is $N := 864$.
+
+\subsection{Numerical integration}
+\noindent Each particle is described by its position $x^i$ and its velocity $v^i$, both in three dimensions. The time evolution of the system is performed using a \textit{second order Euler scheme}, which at the $n^{th}$ time step is given in vector form by:
+
+\begin{align}\label{scheme}
+    x_{n+1} &= x_n + v_{n+1} \Delta t  \\
+    v_{n+1} &= v_n + \frac{1}{2} f_n \Delta t \nonumber
+\end{align}
+
+and $f_n = f(x_n, v_n)$ is the acceleration deduced by the Lennard-Jones potential (eq. \ref{lennardjones}).
+A second and more performing integration method is implemented using verlet 
+
+\subsection{Conservation of energy} \label{sec:energy}
+
+As the simulation runs in the \textit{NVE} regime, the energy is supposed to be constant for a stable behaviour. In figure \ref{task1_total_energy} is shown that the energy oscillates around a stable value $E_{tot} = -5.927 \pm 0.005$. In a first moment, the energy of the system raises drastically until the value $E_{tot}$ is attended, then it tends to slowly decrease and stabilise itself.
+\\
+The amplitude of the oscillations depend on the time step, i.e. that a larger time step induces the numerical simulation to be more unstable. The second order Euler method (\ref{scheme}) is explicit, thus it exists a limit time step $dt_{lim}$ such that $dt > dt_{lim} \implies $ "the method in unstable".
+In fact, we observe that the simulation involving the largest time step $dt = 0.03$ presents the largest amplitude in the error oscillations. 
+
+\begin{figure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{task1_total_energy.pgf}
+        }
+        \caption{NVE for different time steps.}
+        \label{task1_total_energy}
+    \end{subfigure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{task1_fixT.pgf}
+        }
+        \caption{Constant velocity rescaling at temperature $T = 94.4$ \si{K} ($dt =0.0046$).}
+        \label{task1_fixT}
+    \end{subfigure}
+    \caption{Plot of total energy as function of the simulation time. Time and energy are presented in Lennard-Jones units \cite{ljunits}.}
+\end{figure}
+
+\paragraph{Constant velocity rescaling}
+This procedure aims to attend the most stable \textit{NVE} configuration imposing a fixed temperature. The system is indeed evolved using the \textit{NVE} conditions, but each time step is corrected rescaling the velocities in order to attend the chosen temperature. The resulting energy of the system is still a statistically conserved value in average over time, but it's way higher than the one obtained by a free \textit{NVE} regime simulation. This result is show in figure (\ref{task1_fixT}), where we see that the system attends in few steps the most stable configuration under the condition to be at the forced temperature of $94.4$ \si{K}.
+
+\section{Structural properties} \label{sec:structural}
+
+\subsection{Correlation function $g(r)$ and $S(k)$} 
+% plot g(r), S(k), show Rahman results (image)
+
+Those two functions give important informations on the structural properties of the system and they are respectectively defined as \cite{rahman}:
+
+\begin{align}\label{correlation}
+g(r) &= \frac{\varrho(r)}{\varrho_0} \\
+S(k) &= 1 + \varrho_0 \int_0^\infty \frac{\sin(kr)}{kr} [g(r) - 1] 4\pi r^2 dr
+\end{align}
+
+where $\varrho_0 = N/V$ is the particle density at the infinity limit. 
+
+\begin{figure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_gofr.pgf}
+        }
+        \caption{Plot of $g(r)$}
+        \label{step2_gr}
+    \end{subfigure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_sofk.pgf}
+        }
+        \caption{Plot of $S(k)$ for two different method of sampling.}
+        \label{step2_sk}
+    \end{subfigure}
+    \caption{Plot of the radial pair correlation function $g(r)$ and the structure factor $S(k)$. This result is obtained after $2000$ steps  in \textit{NVE} regime starting from an equilibration temperature of $T = 94.4$ \si{K}.}
+\end{figure}
+
+The peaks on the radial pair correlation function $g(r)$ correspond to the presence of particles in the region. It can be observed in figure \ref{step2_gr} the these values are $3.74$ \si{\angstrom}, $7.10$ \si{\angstrom} and $10.23$ \si{\angstrom}, which are matching with the results of Rahman \cite{Rahman} having peaks at $3.7$ \si{\angstrom}, $7.0$ \si{\angstrom} and $10.4$ \si{\angstrom}.
+
+In an analog way, the structure factor can be obtained by computing the discrete fourier transform of $g(r)$ or rather sampling it directly using an estimate.
+It turns out that the fourier transform method is really precise but unstable as $k$ tends to zero. From figure \ref{step2_sk} one sees the oscillation which are produced between $k = 0$ and $k = 1$ \si{\angstrom^{-1}}.
+On the other hand, the direct sampling produces a smoother output, but it loses in precision. 
+For the peak detection, the fourier transform were used and all peaks lying before $k = 2$ were ignored. Another possibility would have been a polynomial (or signal) interpolation of the direct sampling $S(k)$ and then peak detection.
+
+The found peaks are indeed located at $1.98$, $3.66$, $5.4$, $7.2$ \si{\angstrom^{-1}} which are much close to the one found by Rahman \cite{Rahman}, hence $2.00$, $3.62$, $5.75$, $7.18$ \si{\angstrom^{-1}}.
+
+\subsection{Changing the equilibration temperature}
+% study g, S as function of T (for equilibration)
+
+Here we want to check whether the structural properties change with respect to the temperature.
+This task will be performed observing the structural factor $S(k)$ and how its peaks vary.
+
+\par
+\noindent
+Considering the canonical ensemble, it's possible to find an approximation of $g(r)$ making the following assumptions:
+
+\begin{align}\label{pmf}
+     U(r) \approx 
+    \begin{cases}
+        \infty & r \le r_0 \\
+        - \varepsilon & r_0 < r \le r_{cutoff} \\
+        0 & r > r_{cutoff}
+    \end{cases} \\
+     g(r) \approx e^{-\frac{U(r)}{k_B T}} \text{   i.e. Argon is a dilute system \cite{Chandler}}
+\end{align}
+
+which leads using eq. (\ref{correlation}) to a structure factor approximation of
+
+\begin{equation} \label{Sapprox}
+    S(k) = 1 + C \cdot \left[\exp\left(\frac{\varepsilon}{k_B T}\right) - 1\right]
+\end{equation}
+
+for some constant $C$.
+
+From the graph in figure (\ref{step2_sk_changeT}) that the temperature doesn't shift the structural factor but it damps it instead. From figure (\ref{step2_sk_changeT_peaks}), we see that the structure factor fits with a good approximation the identity (\ref{Sapprox}), because the peaks locates inside the fit uncertainty interval. The found coefficients are
+
+\begin{align}
+    &a_{fit} = 100 \pm 16.6 \si{K} \approx \varepsilon/k_b = 120 \si{K}
+    &C_{fit} = -2.35 \pm 0.19
+\end{align}
+
+Indeed, it's not guaranteed that the approximation would work with higher temperatures, as $g(r)$ is supposed to take a much complex form compared to the one described in eq. \ref{pmf}.
+
+\par
+\noindent
+Looking at the structure factor in figure (\ref{step2_sk_changeT}), notice that low temperatures produce large oscillations on the result. This is the same numerical phenomenon observed in figure (\ref{step2_sk}) for the \textit{fourier transform} computation. It is particularly remarkable for $T = 47.2$ \si{K}, where the result oscillates on a factor $\approx 0.25$.
+
+\begin{figure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_changeT.pgf}
+        }
+        \caption{Structure factor.}
+        \label{step2_sk_changeT}
+    \end{subfigure}
+    %\hspace{0.05\textwidth}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_changeT_peaks.pgf}
+        }
+        \caption{First (or highest) peak of $S(k)$ as function of the temperature.}
+        \label{step2_sk_changeT_peaks}
+    \end{subfigure}
+    \caption{Structure factor $S(k)$ evaluated for different temperatures.}
+\end{figure}
+
+\subsection{Variation of $g(r)$ as function of $N_{cells}$ and $r_{cutoff}$ term}
+% More atoms
+
+Here the purpose is to obtain some further relations concerning $g(r)$. From figure (\ref{step2_changeN-gofr}) we find that the number of cells doesn't influence at all the pair correlation function. This result is expected, because the positions are simulated within periodic boundary conditions, thus increasing the number of periods is not supposed to change the density.  On the other hand, having access to a larger range of values of $r$, one notices that the radial pair correlation function is well behaved in the limit of $r \to \infty$, hence $g(\infty) = = 1$. This means essentially that a particle is correlated to another if their reciprocal distance is at most $r \approx 20$ \si{\angstrom}.
+
+Changing on the other hand the distance of cut-off, i.e. the maximum distance of interaction among particles, or rather $r > r_{cutoff} \implies V(r) = 0$, we notice some more interesting behaviour concerning the correlation function. Above $r = \sigma = 3.4$ \si{\angstrom}, $g(r)$ doesn't change significantly among different distances of cut-off. However, cutting off the Lennard-Jones potential for $r < \sigma$ it causes the particles not to find an equilibrium state, thus the pair correlation function presents no peak because there are no stable configurations for the particles.
+That's what it's observed in figure (\ref{step2_changeR-gofr}).
+
+Notice that $r = \sigma$ is the point where the Lennard-Jones potential reaches zero, all values on the left are positive and all on the right are negative.
+Cutting off the values with $r_{cutoff}$, only the values on the left are kept, setting to zero the others.
+The case $r_{cutoff} < \sigma$ corresponds to simulate repulsive balls which have no attraction term, because the potential $V(r) \ge 0$. Hence, their interaction is limited to a set of collisions. The more $r_{cutoff}$ decreases, the sharpest the potential gap becomes, involving then a stronger repulsion force. 
+On the other hand $r_{cutoff} > \sigma$ admits negative values in the potential, implying that the particles could find an equilibrium state. 
+Here the structure factor is not shown because it contains no more informations than the radial pair correlation function in this case.
+
+\begin{figure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_changeN.pgf}
+        }
+        \caption{Varying the number of simulated cells.}
+        \label{step2_changeN-gofr}
+    \end{subfigure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step2_changeR-gofr.pgf}
+        }
+        \caption{Varying $r_{cutoff}$}
+        \label{step2_changeR-gofr}
+    \end{subfigure}
+    \caption{Plot of the radial pair correlation function $g(r)$ at $T = 94.4$ \si{K} for different parameters.}
+\end{figure}
+
+% show form of new potential
+% plot g(r) as function of r_cutoff
+
+\section{Detecting the diffusion coefficient} \label{sec:diffusion}
+
+The diffusion coefficient $D$ appearing in the diffusion equation \cite{course05}
+
+\begin{equation}\label{eq:diffusion}
+    \frac{\partial c}{\partial t}(t,\vec{x}) = D \nabla^2 c(t,\vec{x})
+\end{equation}
+
+can be estimated in two ways: (a) using the Einstein relation for the Mean square displacement (eq. \ref{eq:Dmsd}), or (b) integrating the velocity auto-correlation function (eq. \ref{eq:Dvafc}).
+Both methods are valid and should theoretically lead to the same result \cite{course05}. The equations for both methods are provided:
+
+\begin{align}
+& D_{MSD} = \frac{1}{6} \frac{\partial \langle r^2 \rangle}{\partial t} \label{eq:Dmsd} \\
+& D_{VAFC} = \frac{1}{3} \int_0^\infty d\tau \; \langle \vec{v}(\tau) \vec{v}(0) \rangle \label{eq:Dvafc}
+\end{align}
+
+\begin{figure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step3_average_MSD.pgf}
+        }
+        \caption{Mean square displacement (MSD).}
+        \label{msd_aver}
+    \end{subfigure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step3_average_VACF.pgf}
+        }
+        \caption{Velocity auto-correlation function (VAFC).}
+        \label{vacf_aver}
+    \end{subfigure}
+    
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step3_hist_msd.pgf}
+        }
+        \caption{Distribution of $D_{MSD}$ obtained by MSD.}
+        \label{msd_distrib}
+    \end{subfigure}
+    \begin{subfigure}{0.5\textwidth}
+        \resizebox{\textwidth}{!}{
+            \input{step3_hist_vacf.pgf}
+        }
+        \caption{Distribution of $D_{VACF}$ obtained by VAFC.}
+        \label{vacf_distrib}
+    \end{subfigure}
+    \caption{MSD, VACF and diffusion coefficient $D$ statistics obtained over $N_{run} = 400$ simulations for different initial pseudo-random positions and velocities belonging to the same equilibrium state $T = 94.4 K$. Each simulation has been run until $t=1.0$ and, exploiting the stability of the system, the initial positions and velocities of the next simulation were obtained by the final state of the preceding one. The resulting means of the distributions of $D$ are $\langle D_{MSD} \rangle = 2.394 \cdot 10^{-5} \si{cm^2/s}$, $\langle D_{VACF} \rangle =  2.397 \cdot 10^{-5} \si{cm^2/s}$ and the related standard deviations are $\sigma(D_{MSD}) = 1.782 \cdot 10^{-6} \si{cm^2/s}$ and $\sigma(D_{AVCF}) = 3.271 \cdot 10^{-6} \si{cm^2/s}$.
+    Time and MSD are expressed in [LJ] units (see \ref{app:ljunits}).}
+\end{figure}
+
+\paragraph{Mean square displacement estimation}
+The diffusion coefficient can be obtained by noticing that the mean square displacement is directly proportional to time after $t=0.2$. Then fitting a linear curve $MSD(t) = D + Ct$ (as it's shown in figure \ref{msd_aver}) for some constant $C$ and $D$ on the samples of $t \in [0.8, 1.0]$ should give an enough accurate result by taking $D_{MSD} = C$ from the fitted parameters.
+
+\paragraph{Velocity auto-correlation function}
+This value is obtained by estimating a finite difference integration of all collected values of the velocity auto-correlation function (figure \ref{vacf_aver}). Because the time of the simulation is in the $[0, 1]$ interval, then it suffices to average all obtained samples of the VACF.
+
+Applying those method for a large enough number of simulation and counting the occurrences of the estimates it's possible to obtain the distribution of both $D_{MSD}$ and $D_{VACF}$ random variables. That's what it's shown in figures (\ref{msd_distrib}) and (\ref{vacf_distrib}).
+From those distributions it's sufficient to take the mean and the standard deviation on the mean as error estimate in order to give the definitive values of the diffusion coefficient. Finally, 
+
+\begin{align}
+    &D_{MSD} = (2.394 \pm 0.009) \cdot 10^{-5} \si{cm^2/s} 
+    &D_{VACF} = (2.397 \pm 0.018) \cdot 10^{-5} \si{cm^2/s}
+\end{align}
+
+The distance between the values above is so small that they can be considered as equal. This confirms the equivalence of the two methods and the ensures the correctness of the estimated diffusion coefficient. Both values are also really close to the one estimated by Rahman \cite{Rahman} which is $\hat{D}_{MSD} = 2.43 \cdot 10^{-5}$.
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+\label{conc}
+Molecular dynamics simulation performed with Runge-Kutta time integration turns out to be a good method for certain conditions involving a small number of particles and a small time step for stability. However, the biggest limitation of this method is the scalability: having more particles implies more computations in the order of $\mathcal{O}(N^3)$, which is not clearly feasible. On the other hand the obtained results for the radial pair correlation function, the structure factor and also the diffusion coefficient are very satisfying and they are very similar to the results of Rahman \cite{Rahman}. 
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
+\def\refname{D\MakeLowercase{ocumentation and sources}}
+\begin{thebibliography}{99}
+
+\bibitem{ljunits}
+\url{https://cms.sjtu.edu.cn/doc/courseware/2019/LJ.pdf}
+
+\bibitem{Rahman}
+Correlations in the Motion of Atoms in Liquid Argon, A. Rahman, Phys. Rev. 136, A405 – Published 19 October 1964
+
+\bibitem{course05}
+Course-05.pdf slides on Moodle
+
+\bibitem{course031}
+Course-031.pdf slides on Moodle
+
+\bibitem{Chandler}
+Chandler, D. (1987). "7.3". Introduction to Modern Statistical Mechanics. Oxford University Press.
+%Physics Today 41, 12, 114 (1988); \url{https://doi.org/10.1063/1.2811680}
+
+\end{thebibliography}
+
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
+\appendix
+\label{appendix}
+
+\section{Lennard Jones units} \label{app:ljunits}
+
+\begin{table}[H]
+\begin{tabular}{c|c}
+quantity & LJ units \\
+\hline
+distance & $\sigma$ \\
+energy & $\varepsilon$ \\
+velocity & $(\varepsilon / M)^{1/2}$ \\
+temperature & $\varepsilon / k_B$ \\
+time & $\sigma (\varepsilon / M)^{-1/2}$
+\end{tabular}
+\end{table}
+
+where $M = 6.69 \cdot 10^{-26}$ \si{Kg} is the mass of Argon.
+
+\end{document}
+
